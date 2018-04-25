@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rhamerica/go-log"
-	"github.com/rhamerica/one/model"
+	"github.com/libgolang/log"
+	"github.com/libgolang/one/model"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"

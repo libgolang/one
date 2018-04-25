@@ -1,9 +1,9 @@
 package service
 
 import (
-	"github.com/rhamerica/one/model"
+	"github.com/libgolang/one/model"
 
-	"github.com/rhamerica/go-log"
+	"github.com/libgolang/log"
 )
 
 // Cycle interface for cycle

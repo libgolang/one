@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
-	log "github.com/rhamerica/go-log"
+	log "github.com/libgolang/log"
 	"golang.org/x/net/context"
 )
 

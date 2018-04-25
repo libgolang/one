@@ -1,10 +1,10 @@
-package main
+package clients
 
-import "fmt"
+import "github.com/libgolang/one/model"
 
 // MasterClient main interface
 type MasterClient interface {
- GetContainersByNode(nodeName) []mode.Container 
+	ListContainersByNode(nodeName string) []model.Container
 }
 
 type masterClient struct {
@@ -12,11 +12,9 @@ type masterClient struct {
 
 // NewMasterClient constructor for MasterClient
 func NewMasterClient() MasterClient {
-	return &masterClient{
-	}
+	return &masterClient{}
 }
 
-
-func (m *masterClient) GetContainersByNode(nodeName) []mode.Container {
-	m.db.
+func (m *masterClient) ListContainersByNode(nodeName string) []model.Container {
+	return make([]model.Container, 0)
 }

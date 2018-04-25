@@ -6,9 +6,9 @@ import (
 	"os"
 	"path"
 
-	"github.com/rhamerica/one/utils"
+	"github.com/libgolang/one/utils"
 
-	"github.com/rhamerica/go-log"
+	"github.com/libgolang/log"
 )
 
 var (

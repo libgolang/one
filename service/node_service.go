@@ -3,7 +3,8 @@ package service
 import (
 	"time"
 
-	log "github.com/rhamerica/go-log"
+	"github.com/libgolang/log"
+	"github.com/libgolang/one/clients"
 )
 
 // NodeService interface
@@ -11,10 +12,11 @@ type NodeService interface {
 }
 
 type nodeService struct {
-	listenIP   string
-	listenPort int
-	ticker     *time.Ticker
-	masterEp   string
+	listenIP     string
+	listenPort   int
+	ticker       *time.Ticker
+	masterEp     string
+	masterClient clients.MasterClient
 }
 
 // NewNodeService NodeService constructor
@@ -23,6 +25,7 @@ func NewNodeService(listenIP string, listenPort int) NodeService {
 	ns.listenIP = listenIP
 	ns.listenPort = listenPort
 	ns.ticker = time.NewTicker(20 * time.Second)
+	ns.masterClient = clients.NewMasterClient()
 	go func() {
 		for range ns.ticker.C {
 			ns.checkNode()
@@ -44,8 +47,10 @@ func (n *nodeService) checkNode() {
 }
 
 func (n *nodeService) runMissingContainers() {
-	n.masterClient.getNodeDefinitions(n.nodeName)
+	_ = n.masterClient.ListContainersByNode("this node name")
+	panic("not implemented")
 }
 
 func (n *nodeService) stopZombiContainers() {
+	panic("not implemented")
 }

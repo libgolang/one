@@ -3,14 +3,12 @@ package service
 import (
 	"net/http"
 
-	"github.com/gorilla/mux"
-	"github.com/rhamerica/one/model"
+	"github.com/libgolang/one/model"
+	"github.com/libgolang/one/utils"
 )
 
 // MasterService interface
 type MasterService interface {
-	Start()
-	Stop()
 }
 
 type masterService struct {
@@ -42,11 +40,11 @@ func (m *masterService) listContainers(w http.ResponseWriter, r *http.Request) [
 		"DefinitionName": "string",
 		"NodeName":       "string",
 	}
-	filters := model.RestFilters(def, r)
-	containers = m.db.ListContainers()
+	filters := utils.RestFilters(def, r)
+	containers := m.db.ListContainers()
 	result := make([]model.Container, 0)
-	for _, cont := range container {
-		if model.FiltreMatch(cont, filters) {
+	for _, cont := range containers {
+		if utils.FilterMatch(cont, filters) {
 			result = append(result, cont)
 		}
 	}

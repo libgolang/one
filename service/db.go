@@ -9,8 +9,8 @@ import (
 	"reflect"
 	"syscall"
 
-	"github.com/rhamerica/one/model"
-	"github.com/rhamerica/one/utils"
+	"github.com/libgolang/one/model"
+	"github.com/libgolang/one/utils"
 )
 
 // Db type
