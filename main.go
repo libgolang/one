@@ -2,8 +2,10 @@ package main
 
 import (
 	"fmt"
+	"math/rand"
 	"os"
 	"text/tabwriter"
+	"time"
 
 	"github.com/libgolang/one/service"
 	"github.com/libgolang/one/utils"
@@ -14,7 +16,8 @@ import (
 )
 
 var (
-	props            = properties.MustLoadFile("config.properties", properties.UTF8)
+	props = properties.MustLoadFile("config.properties", properties.UTF8)
+
 	proxyBaseDomain  = props.MustGetString("proxy.domain")
 	proxyPublicIP    = props.GetString("proxy.ip.public", "127.0.0.1")
 	proxyPrivateIP   = props.GetString("proxy.ip.private", "127.0.0.1") // "10.10.10.1"
@@ -22,13 +25,26 @@ var (
 	dockerAPIHost    = props.GetString("docker.host", "")               // "" = unix socket || "tcp:/127.0.0.1:2375"
 	dockerAPIVersion = props.GetString("docker.api.version", "1.37")
 	defDir           = props.GetString("var.dir", "./var")
-	db               = service.NewDb(defDir)
-	proxy            = service.NewProxy(proxyPublicIP, proxyPrivateIP, proxyBaseDomain)
-	docker           = service.NewDocker(dockerHostIP, dockerAPIHost, dockerAPIVersion, db)
-	cycle            = service.NewLifecycle(dockerHostIP, db, proxy, docker)
+	certFile         = props.GetString("tls.cert.file", "")
+	keyFile          = props.GetString("tls.key.file", "")
+	/*
+		masterName       = props.GetString("master.name", "master01")
+		masterClientAddr = props.GetString("master.client.addr", "http://127.0.0.1:2379")
+		masterPeerAddr   = props.GetString("master.peer.addr", "http://127.0.0.1:2380")
+		masteCluster     = props.GetString("master.cluster", "master01=http://127.0.0.1:2380")
+	*/
+
+	//db     = service.NewDb(defDir, masterName, masterClientAddr, masterPeerAddr, masteCluster)
+	dbBack = service.NewDb(defDir)
+	db     = service.NewFrontDb(dbBack)
+	proxy  = service.NewProxy(proxyPublicIP, proxyPrivateIP, proxyBaseDomain)
+	docker = service.NewDocker(dockerHostIP, dockerAPIHost, dockerAPIVersion, db)
+	cycle  = service.NewLifecycle(dockerHostIP, db, proxy, docker)
+	rs     = service.NewRestServer(props.GetString("master.listen.addr", "127.0.0.1:8080"), certFile, keyFile)
 )
 
 func main() {
+	rand.Seed(time.Now().Unix())
 	log.SetTrace(true)
 	log.SetDefaultLevel(log.DEBUG)
 
@@ -46,13 +62,36 @@ func main() {
 		startService(os.Args)
 	case "stop":
 		stopService(os.Args)
+	case "service":
+		startServices(os.Args)
 	default:
 		printHelp()
 	}
+	db.Close()
+}
+
+func startServices(args []string) {
+	n := len(args)
+	if n < 3 {
+		printHelp()
+		return
+	}
+
+	set := make(map[string]bool)
+	for _, name := range args[2:n] {
+		set[name] = true
+	}
+
+	for name := range set {
+		switch name {
+		case "master":
+			service.NewMasterService(rs, db)
+		}
+	}
+	rs.StartAndBlock()
 }
 
 func listAction(args []string) {
-	//w := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', tabwriter.AlignRight|tabwriter.Debug)
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', 0)
 	fmt.Fprintln(w, fmt.Sprintf("%s\t%s\t", "=Name=", "=State="))
 	for _, def := range db.ListDefinitions() {
@@ -106,4 +145,5 @@ const helpTxt = `
 	{{.progName}} list
 	{{.progName}} start <name>
 	{{.progName}} stop  <name>
+	{{.progName}} service  <name  <name ...> ...>
 `

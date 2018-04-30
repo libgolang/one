@@ -2,11 +2,50 @@ package utils
 
 import (
 	"net/http"
+	"reflect"
 	"strconv"
 	"strings"
 
 	"github.com/libgolang/one/model"
 )
+
+// RestFilterReduce filter out items out of the slice by using a definition
+func RestFilterReduce(def map[string]string, r *http.Request, slicePtr interface{}) {
+	p := reflect.ValueOf(slicePtr)
+	if p.Kind() != reflect.Ptr {
+		panic("Must be a slice pointer")
+	}
+
+	//
+	filters := RestFilters(def, r)
+
+	// reflect
+	origSlice := p.Elem()
+
+	sliceType := origSlice.Type().Elem() // element contained by slice/map
+	if origSlice.Kind() == reflect.Map {
+		keys := origSlice.MapKeys()
+		for _, key := range keys {
+			el := origSlice.MapIndex(key)
+			if !FilterMatch(el.Interface(), filters) {
+				origSlice.SetMapIndex(key, reflect.Value{})
+			}
+		}
+		//origSlice.Set(newSlice)
+	} else if origSlice.Kind() == reflect.Slice {
+		newSlice := reflect.MakeSlice(reflect.SliceOf(sliceType), 0, 10)
+		for i := 0; i < origSlice.Len(); i++ {
+			el := origSlice.Index(i)
+			if FilterMatch(el.Interface(), filters) {
+				newSlice = reflect.Append(newSlice, el)
+			}
+		}
+		origSlice.Set(newSlice)
+	} else {
+		panic("Invalid Type passed")
+	}
+
+}
 
 //
 type defMap struct {
@@ -58,12 +97,29 @@ func RestFilters(def map[string]string, r *http.Request) []model.Filter {
 		switch d.Type {
 		case "string":
 			for _, val := range vals {
-				result = append(result, &model.FilterString{operation, d.Field, val})
+				result = append(result, &model.FilterString{
+					Operation: operation,
+					Field:     d.Field,
+					Value:     val,
+				})
 			}
 		case "int":
 			for _, val := range vals {
 				i, _ := strconv.ParseInt(val, 10, 64)
-				result = append(result, &model.FilterInt{operation, d.Field, i})
+				result = append(result, &model.FilterInt{
+					Operation: operation,
+					Field:     d.Field,
+					Value:     i,
+				})
+			}
+		case "bool":
+			for _, val := range vals {
+				b, _ := strconv.ParseBool(val)
+				result = append(result, &model.FilterBool{
+					Operation: operation,
+					Field:     d.Field,
+					Value:     b,
+				})
 			}
 		}
 

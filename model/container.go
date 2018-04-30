@@ -2,12 +2,12 @@ package model
 
 // Container strcuture
 type Container struct {
-	Name           string
-	Image          string
-	ContainerID    string
-	Running        bool
-	Labels         map[string]string
-	HTTPPort       int
-	DefinitionName string
-	NodeName       string
+	Name           string            `json:"name"`
+	DefinitionName string            `json:"definitionName"`
+	Image          string            `json:"image"`
+	ContainerID    string            `json:"containerId"`
+	Running        bool              `json:"running"`
+	Labels         map[string]string `json:"labels"`
+	HTTPPort       int               `json:"httpPort"`
+	NodeName       string            `json:"nodeName"`
 }

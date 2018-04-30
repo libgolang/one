@@ -4,6 +4,7 @@ package model
 type Definition struct {
 	Name     string            `json:"name"`
 	Image    string            `json:"image"`
+	Count    int               `json:"count"`
 	HTTPPort int               `json:"httpPort"`
 	Ports    []string          `json:"ports"`
 	Volumes  map[string]string `json:"volumes"`

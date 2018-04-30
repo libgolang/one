@@ -2,6 +2,8 @@ package utils
 
 import (
 	"os"
+
+	"github.com/libgolang/log"
 )
 
 // FileExists check if file exists
@@ -23,5 +25,13 @@ func Mkdir(file string) {
 func Remove(path string) {
 	if err := os.RemoveAll(path); err != nil {
 		panic(err)
+	}
+}
+
+// EnsureDir checks if a directory exists, if it doesn't it attempts to create it
+func EnsureDir(dir string) {
+	if !FileExists(dir) {
+		log.Warn("Directory %s does not exist.  Creating!", dir)
+		Mkdir(dir)
 	}
 }
