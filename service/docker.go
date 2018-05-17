@@ -2,7 +2,6 @@ package service
 
 import (
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -27,10 +26,14 @@ const (
 type Docker interface {
 	ContainerList() []model.Container
 	IsRunningByDefName(defName string) bool
+	//IsRunningByName(defName string) bool
 	ContainerExists(defName string) bool
 	ContainerRemove(defName string)
+	ContainerRemoveByName(defName string)
 	ContainerGetByDefName(defName string) *model.Container
-	ContainerRun(def *model.Definition) *model.Container
+	ContainerGetByName(name string) *model.Container
+	ContainerRunByDefinition(def *model.Definition) *model.Container
+	ContainerRun(def *model.Container)
 	ContainerStopByDefName(defName string)
 	ContainerRemoveByDefName(defName string)
 }
@@ -46,9 +49,9 @@ type docker struct {
 // used to access the hsot. apiHost is the ip or host name of
 // the docker api (empty string to use unix socket).  apiVersion
 // used to match the api version on the docker server.
-func NewDocker(host, apiHost, apiVersion string, db Db) Docker {
-	_ = os.Setenv("DOCKER_HOST", apiHost)
-	_ = os.Setenv("DOCKER_API_VERSION", apiVersion)
+func NewDocker(host /*, apiHost, apiVersion*/ string, db Db) Docker {
+	//_ = os.Setenv("DOCKER_HOST", apiHost)
+	//_ = os.Setenv("DOCKER_API_VERSION", apiVersion)
 	ctx := context.Background()
 	cli, err := client.NewEnvClient()
 	if err != nil {
@@ -66,6 +69,14 @@ func (d *docker) ContainerRemove(name string) {
 	}
 }
 
+func (d *docker) ContainerRemoveByName(name string) {
+	log.Info("ContainerRemove(%s)", name)
+	c := d.ContainerGetByName(name)
+	if c != nil {
+		_ = d.cli.ContainerRemove(d.ctx, c.ContainerID, types.ContainerRemoveOptions{})
+	}
+}
+
 // ContainerGetByDefName gets a container or nil if not found
 func (d *docker) ContainerGetByDefName(defName string) *model.Container {
 	list := d.ContainerList()
@@ -76,30 +87,40 @@ func (d *docker) ContainerGetByDefName(defName string) *model.Container {
 	}
 	return nil
 }
+func (d *docker) ContainerGetByName(name string) *model.Container {
+	list := d.ContainerList()
+	for _, c := range list {
+		if c.Name == name {
+			return &c
+		}
+	}
+	return nil
+}
 
 func (d *docker) ContainerList() []model.Container {
+	result := make([]model.Container, 0)
+
 	list, err := d.cli.ContainerList(d.ctx, types.ContainerListOptions{All: true})
 	if err != nil {
-		panic(err)
-	}
-	result := make([]model.Container, len(list))
-	for _, cont := range list {
-		defName, ok := cont.Labels["definitionName"]
-		if !ok {
-			continue
+		log.Error("Error listing container from docker daemon: %s", err)
+	} else {
+		for _, cont := range list {
+			_, ok := cont.Labels["one.managed"]
+			if !ok {
+				continue
+			}
+			modelContainer := model.Container{
+				Name:           string([]rune(cont.Names[0])[1:]),
+				ContainerID:    cont.ID,
+				Image:          cont.Image,
+				Labels:         cont.Labels,
+				DefinitionName: cont.Labels["one.definitionName"],
+				Running:        cont.State == "running",
+			}
+			//log.Debug("Found: %s", modelContainer)
+			result = append(result, modelContainer)
 		}
-		modelContainer := model.Container{
-			Name:           cont.Names[0],
-			ContainerID:    cont.ID,
-			Image:          cont.Image,
-			Labels:         cont.Labels,
-			DefinitionName: defName,
-			Running:        cont.State == "running",
-		}
-		//fmt.Printf("%s", modelContainer)
-		result = append(result, modelContainer)
 	}
-
 	return result
 }
 
@@ -114,6 +135,20 @@ func (d *docker) IsRunningByDefName(defName string) bool {
 	return false
 }
 
+/*
+func (d *docker) IsRunningByName(name string) bool {
+	list := d.ContainerList()
+	var isRunning = false
+	for _, cont := range list {
+		if cont.Name == name && cont.Running {
+			isRunning = true
+		}
+	}
+	log.Debug("IsRunningByName(%s) %t", name, isRunning)
+	return isRunning
+}
+*/
+
 func (d *docker) ContainerExists(defName string) bool {
 	list := d.ContainerList()
 	for _, cont := range list {
@@ -124,96 +159,17 @@ func (d *docker) ContainerExists(defName string) bool {
 	return false
 }
 
-func (d *docker) ContainerRun(def *model.Definition) *model.Container {
-	log.Info("ContainerRun(%s)", def)
-
-	//
-	// docker api
-	//
-	name := fmt.Sprintf("%s-%d", def.Name, d.getNextID())
-	image := def.Image
-
-	// labels
-	labels := make(map[string]string)
-	labels["definitionName"] = def.Name
-
-	// caps
-	env := make([]string, 0)
-	for k, v := range def.Env {
-		env = append(env, fmt.Sprintf("%s=%s", k, v))
-	}
-
-	// porMap : type PortMap map[Port][]PortBinding
-	portMap := make(nat.PortMap)
-	for _, portPortAndProtocol := range def.Ports { // 53:53/udp
-		parts := strings.Split(portPortAndProtocol, ":")
-		hostPort := parts[0]
-		portAndProtocol := parts[1]
-		port := nat.Port(portAndProtocol)
-		binding := nat.PortBinding{HostIP: d.hostIP, HostPort: hostPort}
-		if bindings, ok := portMap[port]; ok {
-			portMap[port] = append(bindings, binding)
-		} else {
-			portMap[port] = append([]nat.PortBinding{}, binding)
-		}
-	}
-	// http port
-	httpRandPort := 0
-	if def.HTTPPort > 0 {
-		httpRandPort = d.getNextRandPort()
-		port := nat.Port(
-			fmt.Sprintf("%s/tcp", strconv.Itoa(def.HTTPPort)),
-		)
-		portMap[port] = append([]nat.PortBinding{}, nat.PortBinding{HostIP: d.hostIP, HostPort: strconv.Itoa(httpRandPort)})
-	}
-
-	// volumes
-	volumes := make([]string, 0)
-	for hostDir, contDir := range def.Volumes {
-		hostDir = strings.TrimSpace(hostDir)
-		contDir = strings.TrimSpace(contDir)
-		volumes = append(volumes, fmt.Sprintf("%s:%s", hostDir, contDir))
-	}
-
-	config := &container.Config{}
-	config.Image = def.Image
-	config.Env = env
-	config.Cmd = def.Cmd
-	config.Labels = labels
-	hostConfig := &container.HostConfig{}
-	hostConfig.CapAdd = def.Caps
-	hostConfig.PortBindings = portMap
-	hostConfig.Binds = volumes
-	netConfig := &network.NetworkingConfig{}
-
-	_, err := d.cli.ImagePull(d.ctx, def.Image, types.ImagePullOptions{})
-	if err != nil {
-		panic(err)
-	}
-	//_, _ = io.Copy(os.Stdout, reader)
-
-	created, err := d.cli.ContainerCreate(d.ctx, config, hostConfig, netConfig, name)
-	if err != nil {
-		panic(err)
-	}
-	if err = d.cli.ContainerStart(d.ctx, created.ID, types.ContainerStartOptions{}); err != nil {
-		panic(err)
-	}
-
-	if inspect, err := d.cli.ContainerInspect(d.ctx, created.ID); err != nil {
-		panic(err)
-	} else if !inspect.State.Running {
-		panic(fmt.Sprintf("Container %s not running", created.ID))
-	}
+func (d *docker) ContainerRunByDefinition(def *model.Definition) *model.Container {
+	log.Info("ContainerRunByDefinition(%s)", def)
 
 	cont := &model.Container{}
-	cont.Name = name
-	cont.Image = image
-	cont.ContainerID = created.ID
-	cont.Labels = labels
-	cont.Running = true
-	cont.HTTPPort = httpRandPort
+	cont.Image = def.Image
+	cont.DefinitionName = def.Name
+	cont.HTTPPort = d.db.NextAutoIncrement("http.port", "http.port")
+	cont.Name = fmt.Sprintf("%s-%d", def.Name, d.db.NextAutoIncrement("inc.container", def.Name))
+	cont.Running = false
 
+	d.ContainerRun(cont)
 	return cont
 }
 
@@ -288,4 +244,96 @@ func (d *docker) getNextID() int {
 	}
 	log.Debug("getNextID():%d", id)
 	return id
+}
+
+func (d *docker) ContainerRun(cont *model.Container) {
+	log.Info("ContainerRun(%s)", cont)
+
+	//
+	// docker api
+	//
+	name := cont.Name
+
+	// labels
+	labels := make(map[string]string)
+	labels["one.definitionName"] = cont.DefinitionName
+	labels["one.managed"] = "true"
+
+	// caps
+	env := make([]string, 0)
+	for k, v := range cont.Env {
+		env = append(env, fmt.Sprintf("%s=%s", k, v))
+	}
+
+	// porMap : type PortMap map[Port][]PortBinding
+	portMap := make(nat.PortMap)
+	for _, portPortAndProtocol := range cont.Ports { // 53:53/udp
+		parts := strings.Split(portPortAndProtocol, ":")
+		hostPort := parts[0]
+		portAndProtocol := parts[1]
+		port := nat.Port(portAndProtocol)
+		binding := nat.PortBinding{HostIP: d.hostIP, HostPort: hostPort}
+		if bindings, ok := portMap[port]; ok {
+			portMap[port] = append(bindings, binding)
+		} else {
+			portMap[port] = append([]nat.PortBinding{}, binding)
+		}
+	}
+	// http port
+	httpRandPort := 0
+	if cont.HTTPPort > 0 {
+		httpRandPort = d.getNextRandPort()
+		port := nat.Port(
+			fmt.Sprintf("%s/tcp", strconv.Itoa(cont.HTTPPort)),
+		)
+		portMap[port] = append([]nat.PortBinding{}, nat.PortBinding{HostIP: d.hostIP, HostPort: strconv.Itoa(httpRandPort)})
+	}
+
+	// volumes
+	volumes := make([]string, 0)
+	for hostDir, contDir := range cont.Volumes {
+		hostDir = strings.TrimSpace(hostDir)
+		contDir = strings.TrimSpace(contDir)
+		volumes = append(volumes, fmt.Sprintf("%s:%s", hostDir, contDir))
+	}
+
+	config := &container.Config{}
+	config.Image = cont.Image
+	config.Env = env
+	config.Cmd = cont.Cmd
+	config.Labels = labels
+	hostConfig := &container.HostConfig{}
+	hostConfig.CapAdd = cont.Caps
+	hostConfig.PortBindings = portMap
+	hostConfig.Binds = volumes
+	netConfig := &network.NetworkingConfig{}
+
+	_, err := d.cli.ImagePull(d.ctx, cont.Image, types.ImagePullOptions{})
+	if err != nil {
+		panic(err)
+	}
+	//_, _ = io.Copy(os.Stdout, reader)
+
+	created, err := d.cli.ContainerCreate(d.ctx, config, hostConfig, netConfig, name)
+	if err != nil {
+		panic(err)
+	}
+	if err = d.cli.ContainerStart(d.ctx, created.ID, types.ContainerStartOptions{}); err != nil {
+		panic(err)
+	}
+
+	if inspect, err := d.cli.ContainerInspect(d.ctx, created.ID); err != nil {
+		panic(err)
+	} else if !inspect.State.Running {
+		panic(fmt.Sprintf("Container %s not running", created.ID))
+	}
+
+	//cont := &model.Container{}
+	//cont.Name = name
+	//cont.Image = image
+	cont.ContainerID = created.ID
+	//cont.Labels = labels
+	cont.Running = true
+	cont.HTTPPort = httpRandPort
+	//return cont
 }

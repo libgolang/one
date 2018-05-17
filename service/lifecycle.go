@@ -49,7 +49,7 @@ func (c *cycle) Start(def *model.Definition) {
 	log.Info("Starting container definition '%s'", def.Name)
 
 	//
-	cont := c.docker.ContainerRun(def)
+	cont := c.docker.ContainerRunByDefinition(def)
 
 	//
 	log.Debug("container http port: %d", cont.HTTPPort)

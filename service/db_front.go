@@ -1,6 +1,7 @@
 package service
 
 import (
+	"github.com/libgolang/log"
 	"github.com/libgolang/one/model"
 )
 
@@ -21,14 +22,23 @@ func NewFrontDb(db Db) Db {
 
 func (f *front) init() {
 	go func() {
+		i := 0
 		for cb := range f.jobs {
+			log.Debug("Queue(%d): Transaction received ...", i)
 			cb(f.db)
+			log.Debug("Queue(%d): ... Transaction done", i)
+			i++
 		}
 	}()
 }
 
 func (f *front) Trx(cb func(d Db)) {
-	f.jobs <- cb
+	done := make(chan int)
+	f.jobs <- func(d Db) {
+		cb(d)
+		done <- 1
+	}
+	<-done
 }
 
 func (f *front) Close() {
@@ -69,10 +79,14 @@ func (f *front) GetDefinition(name string) (*model.Definition, error) {
 }
 
 func (f *front) GetVars(cb func(map[string]string)) map[string]string {
+	log.Debug("Front GetVars Start")
 	var res map[string]string
 	f.Trx(func(d Db) {
+		log.Debug("db GetVars Start")
 		res = d.GetVars(cb)
+		log.Debug("db GetVars Start")
 	})
+	log.Debug("Front GetVars End")
 	return res
 }
 
@@ -94,6 +108,23 @@ func (f *front) SaveContainer(cont *model.Container) error {
 	var err error
 	f.Trx(func(d Db) {
 		err = d.SaveContainer(cont)
+	})
+	return err
+}
+
+func (f *front) GetNode(name string) (*model.Node, error) {
+	var node *model.Node
+	var err error
+	f.Trx(func(d Db) {
+		node, err = d.GetNode(name)
+	})
+	return node, err
+}
+
+func (f *front) SaveNode(node *model.Node) error {
+	var err error
+	f.Trx(func(d Db) {
+		err = d.SaveNode(node)
 	})
 	return err
 }

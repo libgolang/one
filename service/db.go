@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"os"
 	"path"
 	"reflect"
 	"strconv"
@@ -29,6 +30,8 @@ type Db interface {
 	ListDefinitions() map[string]*model.Definition
 	ListContainers() map[string]*model.Container
 	ListNodes() map[string]*model.Node
+	GetNode(name string) (*model.Node, error)
+	SaveNode(node *model.Node) error
 	GetDefinition(name string) (*model.Definition, error)
 	GetVars(func(map[string]string)) map[string]string
 	DeleteContainer(ID string)
@@ -71,73 +74,20 @@ func (d *db) Trx(f func(d Db)) {
 }
 
 func (d *db) init() {
-	/*
-		//	etcd
-		//	--name infra0
-		//	--initial-advertise-peer-urls http://10.0.1.10:2380 \
-		//	--listen-peer-urls http://10.0.1.10:2380 \
-		//	--listen-client-urls http://10.0.1.10:2379,http://127.0.0.1:2379 \
-		//	--advertise-client-urls http://10.0.1.10:2379 \
-		//	--initial-cluster-state new
-		//	--initial-cluster-token etcd-cluster-1 \
-		initialAdvertisePeerUrls := d.peerURLs
-		advertiseClientUrls := d.clientURLs
-		cfg := embed.NewConfig()
-		cfg.Name = d.name
-		cfg.Dir = path.Join(d.dir, "etcd")
-		cfg.LPUrls = parseCommaSeparatedUrls(d.peerURLs)
-		cfg.LCUrls = parseCommaSeparatedUrls(d.clientURLs)
-		cfg.InitialCluster = d.cluster
-		cfg.APUrls = parseCommaSeparatedUrls(initialAdvertisePeerUrls)
-		cfg.ACUrls = parseCommaSeparatedUrls(advertiseClientUrls)
-
-		etcd, err := embed.StartEtcd(cfg)
-		if err != nil {
-			log.Error("%s", err)
-		}
-		defer etcd.Close()
-		select {
-		case <-etcd.Server.ReadyNotify():
-			log.Info("Etcd server is ready!")
-		case <-time.After(60 * time.Second):
-			etcd.Server.Stop() // trigger a shutdown
-			log.Panic("Server took too long to start!")
-		}
-		d.etcd = etcd
-
-		//
-		// Client Code
-		//
-		cli, err := clientv3.New(clientv3.Config{
-			Endpoints:   strings.Split(d.clientURLs, ","),
-			DialTimeout: 5 * time.Second,
-		})
-		if err != nil {
-			log.Panic("Unable to connect to ETCD")
-		}
-		d.ecli = cli
-	*/
+	// nothing to do
 }
 
 func (d *db) Close() {
-	/*
-		if d.ecli != nil {
-			d.ecli.Close()
-		}
-		if d.etcd != nil {
-			d.etcd.Close()
-		}
-	*/
+	// nothing to do
 }
 
 func (d *db) ListNodes() map[string]*model.Node {
-	//defer d.Lock(NodesDir)()
 	result := make(map[string]*model.Node)
-	d.listFromDirGeneric(ContsDir, reflect.TypeOf(model.Node{}), func(f string, it interface{}) bool {
+	d.listFromDirGeneric(NodesDir, reflect.TypeOf(model.Node{}), func(f string, it interface{}) bool {
 		if obj, ok := it.(*model.Node); ok {
 			result[obj.Name] = obj
 		}
-		return true
+		return true // continue execution
 	})
 
 	return result
@@ -150,7 +100,7 @@ func (d *db) ListDefinitions() map[string]*model.Definition {
 		if def, ok := it.(*model.Definition); ok {
 			result[def.Name] = def
 		}
-		return true
+		return true // continue execution
 	})
 	return result
 }
@@ -162,7 +112,7 @@ func (d *db) ListContainers() map[string]*model.Container {
 		if obj, ok := it.(*model.Container); ok {
 			result[obj.Name] = obj
 		}
-		return true
+		return true // continue execution
 	})
 	return result
 }
@@ -197,12 +147,15 @@ func (d *db) GetVars(cb func(map[string]string)) map[string]string {
 	varsFile := path.Join(d.dir, "vars.json")
 
 	// Read JSON from file
-	bytes, err := ioutil.ReadFile(varsFile)
-	if err != nil {
-		panic(err)
-	}
-	if len(bytes) == 0 {
+	var bytes []byte
+	var err error
+	if _, err := os.Stat(varsFile); os.IsNotExist(err) {
 		bytes = []byte("{}") // empty map
+	} else {
+		bytes, err = ioutil.ReadFile(varsFile)
+		if err != nil {
+			panic(err)
+		}
 	}
 
 	// Unmarshal
@@ -259,22 +212,50 @@ func (d *db) SaveContainer(cont *model.Container) error {
 	if err != nil {
 		return err
 	}
-	fileName := path.Join(d.dir, ContsDir, fmt.Sprintf("%s.json", cont.Name))
+	dir := d.mkdirIfMissing(ContsDir)
+	fileName := path.Join(dir, fmt.Sprintf("%s.json", cont.Name))
 	if err = ioutil.WriteFile(fileName, bytes, 0664); err != nil {
 		return err
 	}
 	return nil
 }
 
+func (d *db) GetNode(name string) (*model.Node, error) {
+	nodes := d.ListNodes()
+	node, ok := nodes[name]
+	if !ok {
+		return nil, fmt.Errorf("Node Not found")
+	}
+	return node, nil
+}
+
+func (d *db) SaveNode(node *model.Node) error {
+	log.Info("SavingNode %s", node.Name)
+	bytes, err := json.Marshal(node)
+	if err != nil {
+		return err
+	}
+	dir := d.mkdirIfMissing(NodesDir)
+	fileName := path.Join(dir, fmt.Sprintf("%s.json", node.Name))
+	if err = ioutil.WriteFile(fileName, bytes, 0664); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (d *db) mkdirIfMissing(subDir string) string {
+	dir := path.Join(d.dir, subDir)
+	if !utils.FileExists(dir) {
+		log.Warn("Creating missing Directory %s", dir)
+		utils.Mkdir(dir)
+	}
+	return dir
+}
+
 func (d *db) listFromDirGeneric(subDir string, elementType reflect.Type, collector func(fileName string, it interface{}) bool) {
 
 	// Check Dir
-	dir := path.Join(d.dir, subDir)
-	log.Debug("reading files from dir %s", dir)
-	if !utils.FileExists(dir) {
-		log.Warn("Directory %s does not exist.  Creating!", dir)
-		utils.Mkdir(dir)
-	}
+	dir := d.mkdirIfMissing(subDir)
 
 	files, _ := ioutil.ReadDir(dir)
 	for _, file := range files {
@@ -313,47 +294,3 @@ func (d *db) listFromDirGeneric(subDir string, elementType reflect.Type, collect
 		}
 	}
 }
-
-/*
-// Lock file based lock
-func (d *db) Lock(name string) func() {
-
-	dir := path.Join(d.dir, LocksDir)
-	utils.EnsureDir(dir) // make sure it exists
-
-	//
-	lockFile := path.Join(dir, fmt.Sprintf("%s.lock", name))
-
-	// Open
-	f, err := os.OpenFile(lockFile, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0754)
-	if err != nil {
-		panic(err)
-	}
-
-	err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX)
-	if err != nil {
-		panic(err)
-	}
-
-	unlockFunc := func() {
-		if err := f.Close(); err != nil {
-			log.Error("error closing file %s", lockFile)
-		}
-	}
-	return unlockFunc
-}
-
-func parseCommaSeparatedUrls(urls string) []url.URL {
-	parts := strings.Split(urls, ",")
-	list := make([]url.URL, len(parts))
-	for _, s := range parts {
-		u, err := url.Parse(s)
-		if err != nil {
-			log.Error("Error parsing comma separated url '%s'", s)
-		} else {
-			list = append(list, *u)
-		}
-	}
-	return list
-}
-*/

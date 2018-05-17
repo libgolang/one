@@ -42,5 +42,6 @@
   version = "1.6.1"
 
 [[constraint]]
-  name = "github.com/coreos/etcd"
-  version = "3.3.4"
+  name = "github.com/libgolang/log"
+  branch = "master"
+  source = "github.com/libgolang/log"
