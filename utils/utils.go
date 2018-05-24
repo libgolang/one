@@ -2,14 +2,8 @@ package utils
 
 import (
 	"os"
-	"path"
-	"path/filepath"
-	"strings"
-
-	"flag"
 
 	"github.com/libgolang/log"
-	"github.com/magiconair/properties"
 )
 
 // FileExists check if file exists
@@ -43,8 +37,8 @@ func EnsureDir(dir string) {
 }
 
 // ResolveNodeName resolves the name of the current machine.
-// It arguments as presedence.  If the arguments are empty,
-// then it uses the machine hostname.
+// It returns the first non-empty argument.  If the arguments
+// are empty, then it uses the machine hostname.
 func ResolveNodeName(args ...string) string {
 	for _, hn := range args {
 		if hn != "" {
@@ -55,6 +49,7 @@ func ResolveNodeName(args ...string) string {
 	return name
 }
 
+/*
 // ConfigString Resolves configuration from argument, environment or config file
 // in that order
 func ConfigString(key, def string) string {
@@ -120,3 +115,4 @@ func configInit() {
 	}
 	props, _ = properties.LoadFile(*configFilePtr, properties.UTF8)
 }
+*/

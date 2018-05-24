@@ -10,7 +10,8 @@ type Container struct {
 	Running        bool              `json:"running"`
 	Labels         map[string]string `json:"labels"`
 	Volumes        map[string]string `json:"volumes"`
-	HTTPPort       int               `json:"httpPort"`
+	HTTPPort       int               `json:"httpPort"`     // the HTTP Port on the container
+	NodeHTTPPort   int               `json:"nodeHttpPort"` // the rnadomly generated HTTP Port to access HTTPPort
 	Ports          []string          `json:"ports"`
 	Env            map[string]string `json:"env"`
 	Cmd            []string          `json:"cmd"`

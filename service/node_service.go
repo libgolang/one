@@ -6,6 +6,7 @@ import (
 	"github.com/libgolang/log"
 	"github.com/libgolang/one/clients"
 	"github.com/libgolang/one/model"
+	"github.com/libgolang/one/utils"
 )
 
 // NodeService interface
@@ -13,17 +14,21 @@ type NodeService interface {
 }
 
 type nodeService struct {
-	ticker       *time.Ticker
-	masterClient clients.MasterClient
-	docker       Docker
-	nodeName     string
-	nodeAddr     string
+	ticker         *time.Ticker
+	masterClient   clients.MasterClient
+	docker         Docker
+	nodeName       string
+	nodeAddr       string
+	preRunHookCfg  string
+	postRunHookCfg string
 }
 
 // NewNodeService NodeService constructor
-func NewNodeService(masterAddr string, docker Docker, nodeName string, nodeAddr string) NodeService {
+func NewNodeService(masterAddr string, docker Docker, nodeName, nodeAddr, preRunHookCfg, postRunHookCfg string) NodeService {
 	ns := &nodeService{}
 	ns.ticker = time.NewTicker(20 * time.Second)
+	ns.preRunHookCfg = preRunHookCfg
+	ns.postRunHookCfg = postRunHookCfg
 	ns.masterClient = clients.NewMasterClient(masterAddr)
 	ns.nodeName = nodeName
 	ns.nodeAddr = nodeAddr
@@ -69,8 +74,8 @@ func (n *nodeService) checkNode() {
 	for _, cont := range infoFromMaster.Containers {
 		serverMap[cont.Name] = cont
 	}
-	log.Debug("%s", serverMap)
-	log.Debug("%s", currentMap)
+	//log.Debug("%s", serverMap)
+	//log.Debug("%s", currentMap)
 
 	// stop containers in currentMap that are not in serverMap
 	for name := range currentMap {
@@ -86,7 +91,51 @@ func (n *nodeService) checkNode() {
 		if _, ok := currentMap[name]; !ok {
 			// run
 			log.Info("Running container %s", cont.Name)
+
+			//
+			if err := n.preRunHook(cont); err != nil {
+				log.Error("preRunHook returned error, not running containers: %s", err)
+				continue
+			}
+
+			//
 			n.docker.ContainerRun(&cont)
+
+			//
+			if err := n.postRunHook(cont); err != nil {
+				log.Error("postRunHook returned error: %s", err)
+			}
 		}
 	}
+}
+
+func (n *nodeService) preRunHook(cont model.Container) error {
+	if n.preRunHookCfg == "" {
+		log.Info("preRunHook empty... nothing to run")
+		return nil
+	}
+	log.Info("Running preRunHook %s", n.preRunHookCfg)
+
+	args := argsFromContainer(n.preRunHookCfg, cont)
+	return utils.ExecSilent(args...)
+}
+
+func (n *nodeService) postRunHook(cont model.Container) error {
+	if n.postRunHookCfg == "" {
+		log.Info("postRunHook empty... nothing to run")
+		return nil
+	}
+	log.Info("Running postRunHook %s", n.postRunHookCfg)
+
+	args := argsFromContainer(n.postRunHookCfg, cont)
+	return utils.ExecSilent(args...)
+}
+
+func argsFromContainer(hook string, cont model.Container) []string {
+	args := make([]string, 0)
+	args = append(args, hook, "--name", cont.Name)
+	for volume := range cont.Volumes {
+		args = append(args, "--volume", volume)
+	}
+	return args
 }

@@ -1,7 +1,6 @@
 package main
 
 import (
-	//"flag"
 	"fmt"
 	"math/rand"
 	"os"
@@ -16,118 +15,83 @@ import (
 )
 
 var (
-	//cfgMasterAddr     = utils.ConfigString("master", "")
-	cfgMasterCertFile = utils.ConfigString("tls.cert.file", "")
-	cfgMasterKeyFile  = utils.ConfigString("tls.key.file", "")
-	//cfgNodeMasterAddr = utils.ConfigString("node", "")
-
-	nodeName         = utils.ConfigString("node.name", "")
-	proxyBaseDomain  = utils.ConfigRequireString("proxy.domain")
-	proxyPublicIP    = utils.ConfigString("proxy.ip.public", "127.0.0.1")
-	proxyPrivateIP   = utils.ConfigString("proxy.ip.private", "127.0.0.1") // "10.10.10.1"
-	dockerHostIP     = utils.ConfigString("docker.host.ip", "127.0.0.1")   //"10.10.10.1"
-	dockerAPIHost    = utils.ConfigString("docker.host", "")               // "" = unix socket || "tcp:/127.0.0.1:2375"
-	dockerAPIVersion = utils.ConfigString("docker.api.version", "1.37")
-	defDir           = utils.ConfigString("var.dir", "./var")
-
-	dbBack = service.NewDb(defDir)
-	db     = service.NewFrontDb(dbBack)
-	proxy  = service.NewProxy(proxyPublicIP, proxyPrivateIP, proxyBaseDomain)
-	docker = service.NewDocker(dockerHostIP /*, dockerAPIHost, dockerAPIVersion*/, db)
-	cycle  = service.NewLifecycle(dockerHostIP, db, proxy, docker)
+	cfgMasterCertFile    = utils.ConfigString("tls.cert.file", "", "Certificate to use for master REST TLS")
+	cfgMasterKeyFile     = utils.ConfigString("tls.key.file", "", "Key file to use for master REST TLS")
+	nodeName             = utils.ConfigString("node.name", utils.ResolveNodeName(), "Machine Node Name. Defaults to hostname")
+	preRunHookPtr        = utils.ConfigString("hook.run.pre", "", "Pre run hook")
+	postRunHookPtr       = utils.ConfigString("hook.run.post", "", "Post run hook")
+	proxyBaseDomain      = utils.ConfigStringRequired("proxy.domain", "Proxy Domain")
+	proxyPublicIP        = utils.ConfigString("proxy.ip.public", "127.0.0.1", "Public IP address exposed to the internet.")
+	proxyPrivateIP       = utils.ConfigString("proxy.ip.private", "127.0.0.1", "Proxy IP address exposed internally only.")   // "10.10.10.1"
+	dockerHostIP         = utils.ConfigString("docker.host.ip", "127.0.0.1", "IP address to attach docker port mappings to.") //"10.10.10.1"
+	dockerAPIHost        = utils.ConfigString("docker.host", "", "Host or unix that node service uses to connect to docker daemon. E.g.: \"\" = unix socket || \"tcp:/127.0.0.1:2375\"")
+	dockerAPIVersion     = utils.ConfigString("docker.api.version", "1.37", "Docker API Version. defaults to 1.37.")
+	defDir               = utils.ConfigString("var.dir", "./var", "Var directory.")
+	cfgMasterAddrPtr     = utils.ConfigString("master", "", "Starts the master and attaches it to the given address. e.g. --master=127.0.0.1:8080")
+	cfgNodeMasterAddrPtr = utils.ConfigString("node", "", "Starts the node and takes the master address. e.g. --node=127.0.0.1:8080")
+	db                   service.Db
+	dbBack               service.Db
+	proxy                service.Proxy
+	docker               service.Docker
+	cycle                service.Cycle
 )
 
 func main() {
+	utils.ConfigParse()
 
-	// flag
-	f := utils.NewFlags()
-	cfgMasterAddrPtr := f.SubString("service", "master", "", "Starts the master and attaches it to the given address. e.g. --master=127.0.0.1:8080")
-	cfgNodeMasterAddrPtr := f.SubString("service", "node", "", "Starts the node and takes the master address. e.g. --node=127.0.0.1:8080")
-	f.Parse()
+	dbBack = service.NewDb(*defDir)
+	db = service.NewFrontDb(dbBack)
+	proxy = service.NewProxy(*proxyPublicIP, *proxyPrivateIP, *proxyBaseDomain)
+	docker = service.NewDocker(*dockerHostIP /*, dockerAPIHost, dockerAPIVersion*/, db)
+	cycle = service.NewLifecycle(*dockerHostIP, db, proxy, docker)
 
 	// Init
 	rand.Seed(time.Now().Unix())
 	defer db.Close()
 
 	// logging
-	os.Setenv("LOG_CONFIG", "config.properties")
+	_ = os.Setenv("LOG_CONFIG", "config.properties")
 	log.LoadLogProperties()
 	log.SetTrace(true)
-	log.Debug("debug")
-	log.Info("info")
-	log.Warn("warn")
-	log.Error("error")
 
-	//log.SetDefaultLevel(log.DEBUG)
-	//log.SetWriters(append([]log.Writer{}, log.NewFileWriter(path.Join(defDir, "logs"), "one", log.Gigabyte, 10)))
-
-	//serviceCommand := flag.NewFlagSet("service", flag.ExitOnError)
-	//masterTextPtr := serviceCommand.String("master", cfgMasterAddr, "Starts the master and attaches it to the given address. e.g. --master=127.0.0.1:8080")
-	//nodeTextPtr := serviceCommand.String("node", cfgNodeMasterAddr, "Starts the node and takes the master address. e.g. --node=127.0.0.1:8080")
-
-	//listCommand := flag.NewFlagSet("list", flag.ExitOnError)
-	//startCommand := flag.NewFlagSet("start", flag.ExitOnError)
-	//stopCommand := flag.NewFlagSet("stop", flag.ExitOnError)
-
-	// args
-	if len(os.Args) < 2 {
-		printHelp()
+	//
+	if *cfgMasterAddrPtr == "" && *cfgNodeMasterAddrPtr == "" {
+		utils.ConfigPrintHelp()
 		os.Exit(1)
 	}
 
-	switch os.Args[1] {
-	case "service":
-		//_ = serviceCommand.Parse(os.Args[2:])
-		cfgMasterAddr := *cfgMasterAddrPtr
-		cfgNodeMasterAddr := *cfgNodeMasterAddrPtr
-		if cfgMasterAddr == "" && cfgNodeMasterAddr == "" {
-			fmt.Println("Here B")
-			f.PrintHelp()
-			os.Exit(1)
-		}
+	var rs service.RestServer
+	if *cfgMasterAddrPtr != "" {
+		rs = service.NewRestServer(*cfgMasterAddrPtr, *cfgMasterCertFile, *cfgMasterKeyFile)
+		service.NewMasterService(rs, db)
+		rs.Start()
+	}
 
-		var rs service.RestServer
-		if cfgMasterAddr != "" {
-			fmt.Println("Here C")
-			rs = service.NewRestServer(cfgMasterAddr, cfgMasterCertFile, cfgMasterKeyFile)
-			service.NewMasterService(rs, db)
-			rs.Start()
-		}
+	if *cfgNodeMasterAddrPtr != "" {
+		service.NewNodeService(*cfgNodeMasterAddrPtr, docker, *nodeName, *dockerHostIP, *preRunHookPtr, *postRunHookPtr)
+	}
 
-		if cfgNodeMasterAddr != "" {
-			fmt.Println("Here D")
-			service.NewNodeService(cfgNodeMasterAddr, docker, utils.ResolveNodeName(nodeName), dockerHostIP)
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
+	for sig := range c {
+		log.Warn("Captured signal: %d", sig)
+		if rs != nil {
+			rs.Stop()
 		}
-
-		c := make(chan os.Signal, 1)
-		signal.Notify(c, os.Interrupt)
-		for sig := range c {
-			log.Warn("Captured signal: %d", sig)
-			if rs != nil {
-				rs.Stop()
-			}
-			os.Exit(1)
-		}
-
-	case "list":
-		//_ = listCommand.Parse(os.Args[2:])
-		listAction(os.Args)
-	case "start":
-		//_ = startCommand.Parse(os.Args[2:])
-		startService(os.Args)
-	case "stop":
-		//_ = stopCommand.Parse(os.Args[2:])
-		stopService(os.Args)
-	default:
-		printHelp()
 		os.Exit(1)
 	}
 
 	/*
-		if serviceCommand.Parsed() {
-		} else if listCommand.Parsed() {
-		} else if startCommand.Parsed() {
-		} else if stopCommand.Parsed() {
+		case "service":
+		case "list":
+			listAction(os.Args)
+		case "start":
+			startService(os.Args)
+		case "stop":
+			stopService(os.Args)
+		default:
+			printHelp()
+			os.Exit(1)
 		}
 	*/
 }

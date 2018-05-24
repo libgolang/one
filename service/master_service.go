@@ -16,7 +16,8 @@ import (
 )
 
 const (
-	masterTick = time.Second * 10
+	masterTick  = time.Second * 10
+	minHTTPPort = 11000
 )
 
 // MasterService interface
@@ -203,7 +204,11 @@ func (m *masterService) allocateContainers() {
 				//
 				c.Image = def.Image
 				c.Running = false
-				c.HTTPPort = m.db.NextAutoIncrement("http.port", "http.port")
+				c.HTTPPort = def.HTTPPort
+				// generate a mapping nodeHttpPort -> httpPort
+				if c.HTTPPort > 0 {
+					c.NodeHTTPPort = minHTTPPort + m.db.NextAutoIncrement("http.port", "http.port")
+				}
 				log.Info("Creating container id %s/%s", c.ContainerID, c.Name)
 				if err := m.db.SaveContainer(c); err != nil {
 					log.Error("Error saving container %s", c.Name)

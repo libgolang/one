@@ -23,7 +23,7 @@ type masterClient struct {
 
 // NewMasterClient constructor for MasterClient
 func NewMasterClient(masterAddr string) MasterClient {
-	return &masterClient{masterAddr}
+	return &masterClient{fmt.Sprintf("http://%s", masterAddr)}
 }
 
 func (m *masterClient) ListContainersByNode(nodeName string) []model.Container {
@@ -31,7 +31,7 @@ func (m *masterClient) ListContainersByNode(nodeName string) []model.Container {
 }
 
 func (m *masterClient) PingNodeInfo(nfo model.NodeInfo) (*model.NodeInfoResponse, error) {
-	url := fmt.Sprintf("http://%s/master/nodeinfo", m.endPoint)
+	url := fmt.Sprintf("%s/master/nodeinfo", m.endPoint)
 	jsonBody, err := json.Marshal(&nfo)
 	if err != nil {
 		return nil, err

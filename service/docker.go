@@ -69,11 +69,19 @@ func (d *docker) ContainerRemove(name string) {
 	}
 }
 
+// ContainerRemoveByName kill and remove container
 func (d *docker) ContainerRemoveByName(name string) {
 	log.Info("ContainerRemove(%s)", name)
 	c := d.ContainerGetByName(name)
 	if c != nil {
-		_ = d.cli.ContainerRemove(d.ctx, c.ContainerID, types.ContainerRemoveOptions{})
+		log.Info("Sending SIGINT to container %s", c.ContainerID)
+		if err := d.cli.ContainerKill(d.ctx, c.ContainerID, "SIGINT"); err != nil {
+			log.Error("Error killing container: %s", err)
+		}
+		log.Info("Removing container %s", c.ContainerID)
+		if err := d.cli.ContainerRemove(d.ctx, c.ContainerID, types.ContainerRemoveOptions{}); err != nil {
+			log.Error("Error Removing container: %s", err)
+		}
 	}
 }
 
@@ -194,6 +202,7 @@ func (d *docker) ContainerRemoveByDefName(defName string) {
 	}
 }
 
+/*
 func (d *docker) getNextRandPort() int {
 	m := d.db.GetVars(func(m map[string]string) {
 		portStr, ok := m["lastHttpPort"]
@@ -219,6 +228,7 @@ func (d *docker) getNextRandPort() int {
 	log.Debug("getNextRandPort():%d", port)
 	return port
 }
+*/
 
 func (d *docker) getNextID() int {
 	m := d.db.GetVars(func(m map[string]string) {
@@ -280,13 +290,13 @@ func (d *docker) ContainerRun(cont *model.Container) {
 		}
 	}
 	// http port
-	httpRandPort := 0
-	if cont.HTTPPort > 0 {
-		httpRandPort = d.getNextRandPort()
+	if cont.NodeHTTPPort > 0 && cont.HTTPPort > 0 {
+		log.Debug("HttpPort map %d -> %d", cont.NodeHTTPPort, cont.HTTPPort)
 		port := nat.Port(
 			fmt.Sprintf("%s/tcp", strconv.Itoa(cont.HTTPPort)),
 		)
-		portMap[port] = append([]nat.PortBinding{}, nat.PortBinding{HostIP: d.hostIP, HostPort: strconv.Itoa(httpRandPort)})
+		log.Debug("port mapping for %s: %s:%s->%s", cont.Name, d.hostIP, cont.NodeHTTPPort, port)
+		portMap[port] = append([]nat.PortBinding{}, nat.PortBinding{HostIP: d.hostIP, HostPort: strconv.Itoa(cont.NodeHTTPPort)})
 	}
 
 	// volumes
@@ -310,30 +320,29 @@ func (d *docker) ContainerRun(cont *model.Container) {
 
 	_, err := d.cli.ImagePull(d.ctx, cont.Image, types.ImagePullOptions{})
 	if err != nil {
-		panic(err)
+		log.Error("Unable to pull image %s: %s", cont.Image, err)
+		return
 	}
 	//_, _ = io.Copy(os.Stdout, reader)
 
 	created, err := d.cli.ContainerCreate(d.ctx, config, hostConfig, netConfig, name)
 	if err != nil {
-		panic(err)
+		log.Error("Unable to create container %s: %s", name, err)
+		return
 	}
 	if err = d.cli.ContainerStart(d.ctx, created.ID, types.ContainerStartOptions{}); err != nil {
-		panic(err)
+		log.Error("Unable to start container %s: %s", name, err)
+		return
 	}
 
 	if inspect, err := d.cli.ContainerInspect(d.ctx, created.ID); err != nil {
-		panic(err)
+		log.Error("Unable to inspect container %s(): %s", name, created.ID, err)
+		return
 	} else if !inspect.State.Running {
-		panic(fmt.Sprintf("Container %s not running", created.ID))
+		log.Error("Container %s(%s) not running: %s", name, created.ID, err)
+		return
 	}
 
-	//cont := &model.Container{}
-	//cont.Name = name
-	//cont.Image = image
 	cont.ContainerID = created.ID
-	//cont.Labels = labels
 	cont.Running = true
-	cont.HTTPPort = httpRandPort
-	//return cont
 }

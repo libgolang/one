@@ -11,96 +11,64 @@ import (
 	"github.com/magiconair/properties"
 )
 
-// Flags represents an flags object
-type Flags struct {
-	subs  map[string]*flag.FlagSet
-	props *properties.Properties
+var (
+	emptyString = ""
+	flagMap     = make(map[string]*flagDef)
+	loadedProps *properties.Properties
+)
+
+type flagDef struct {
+	name     string
+	defValue string
+	usage    string
+	value    string
+	valuePtr *string
+	required bool
 }
 
-// NewFlags constructor
-func NewFlags() *Flags {
+// ConfigString defines a string flag
+func ConfigString(name, defValue, usage string) *string {
+	props := getConfig()
+	def := &flagDef{
+		name:     name,
+		defValue: props.GetString(name, defValue),
+		usage:    usage,
+		required: false,
+	}
+	flagMap[name] = def
+	return &def.value
+}
 
-	//
-	// Resolve Configuration File
-	//
-	fs := flag.NewFlagSet("config", flag.ContinueOnError)
-	fs.SetOutput(&voidWriter{})
-	configFilePtr := fs.String("config", os.Getenv("CONFIG"), "Path to configuration file")
-	_ = fs.Parse(os.Args)
-	if *configFilePtr == "" {
-		*configFilePtr = "config.properties"
-		if _, err := os.Stat(*configFilePtr); os.IsNotExist(err) {
-			cwd, _ := filepath.Abs(filepath.Dir(os.Args[0]))
-			*configFilePtr = path.Join(cwd, *configFilePtr)
+// ConfigStringRequired defines a required string flag
+func ConfigStringRequired(name, usage string) *string {
+	props := getConfig()
+	def := &flagDef{
+		name:     name,
+		defValue: props.GetString(name, ""),
+		usage:    usage,
+		required: true,
+	}
+	flagMap[name] = def
+	return &def.value
+}
+
+// ConfigParse call parse on flags
+func ConfigParse() {
+	for _, v := range flagMap {
+		v.valuePtr = flag.String(v.name, v.defValue, v.usage)
+	}
+	flag.Parse()
+	for _, v := range flagMap {
+		if *v.valuePtr == "" && v.required {
+			panic(fmt.Sprintf("\n%s is a required field.\n\n", v.name))
 		}
-	}
-	props, _ = properties.LoadFile(*configFilePtr, properties.UTF8)
-
-	//
-	//
-	f := &Flags{
-		make(map[string]*flag.FlagSet),
-		props,
-	}
-
-	return f
-}
-
-func (f *Flags) String(key, def, help string) *string {
-	return flag.String(key, EnvGet(key, f.props.GetString(key, def)), help)
-}
-
-// SubString sub command string
-func (f *Flags) SubString(sub, key, def, help string) *string {
-	fs, ok := f.subs[sub]
-	if !ok {
-		fs = flag.NewFlagSet(sub, flag.ContinueOnError)
-		f.subs[sub] = fs
-	}
-	return fs.String(key, EnvGet(key, f.props.GetString(key, def)), help)
-}
-
-// Parse parse the commands
-func (f *Flags) Parse() {
-	if len(os.Args) < 2 {
-		f.PrintHelp()
-		os.Exit(1)
-	}
-	if len(f.subs) > 0 {
-		fmt.Println("here 3")
-		subCommand := os.Args[1]
-		if fs, ok := f.subs[subCommand]; ok {
-			fmt.Println("here 3.2")
-			//
-			args := []string{}
-			if len(os.Args) > 2 {
-				fmt.Println("here 3.3")
-				args = os.Args[2:]
-			}
-			//
-			if err := fs.Parse(args); err != nil {
-				fmt.Println("here 5")
-				f.PrintHelp()
-				os.Exit(1)
-			}
-		} else {
-			fmt.Println("here 6")
-			f.PrintHelp()
-			os.Exit(1)
-		}
-	} else {
-		fmt.Println("here 7")
-		f.PrintHelp()
-		os.Exit(1)
+		v.value = *v.valuePtr
 	}
 }
 
-// PrintHelp prints all the flags help
-func (f *Flags) PrintHelp() {
+// ConfigPrintHelp prints flag helps
+func ConfigPrintHelp() {
 	flag.PrintDefaults()
-	for _, fl := range f.subs {
-		fl.PrintDefaults()
-	}
 }
 
 // KeyToEnvKey renames a configuration key to a proper environment variable
@@ -126,4 +94,29 @@ type voidWriter struct {
 
 func (w *voidWriter) Write(p []byte) (n int, err error) {
 	return len(p), nil
+}
+
+func getConfig() *properties.Properties {
+
+	if loadedProps != nil {
+		return loadedProps
+	}
+
+	// get it from environment
+	envFileName, ok := os.LookupEnv("CONFIG")
+	if !ok {
+		envFileName = "config.properties"
+		if _, err := os.Stat(envFileName); os.IsNotExist(err) {
+			cwd, _ := filepath.Abs(filepath.Dir(os.Args[0]))
+			envFileName = path.Join(cwd, envFileName)
+		}
+	}
+
+	// get it from flags
+	fs := flag.NewFlagSet("config", flag.ContinueOnError)
+	fs.SetOutput(&voidWriter{})
+	configFilePtr := fs.String("config", envFileName, "Path to configuration file")
+	_ = fs.Parse(os.Args[1:])
+	loadedProps, _ = properties.LoadFile(*configFilePtr, properties.UTF8)
+	return loadedProps
 }

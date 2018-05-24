@@ -51,11 +51,6 @@ func NewRestServer(listenAddr, certFile, keyFile string) RestServer {
 
 // Start method to start the service
 func (m *restServer) Start() {
-	//router.HandleFunc("/master/", GetPeople).Methods("GET")
-	//router.HandleFunc("/people/{id}", GetPerson).Methods("GET")
-	//router.HandleFunc("/people/{id}", CreatePerson).Methods("POST")
-	//router.HandleFunc("/people/{id}", DeletePerson).Methods("DELETE")
-	//log.Fatal(http.ListenAndServe(":8000", router))
 	go func() {
 		m.StartAndBlock()
 	}()
@@ -77,8 +72,8 @@ func (m *restServer) StartAndBlock() {
 func (m *restServer) Router() *mux.Router {
 	return m.router
 }
+
 func (m *restServer) HandleFunc(path string, f func(w http.ResponseWriter, r *http.Request) RestResponse) *mux.Route {
-	//m.rs.Router().HandleFunc("/master/containers", func(w http.ResponseWriter, r *http.Request) { m.listContainers(w, r) }).Methods("GET")
 	return m.router.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
 		ret := f(w, r)
 		if ret == nil {
