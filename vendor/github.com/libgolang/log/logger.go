@@ -201,6 +201,13 @@ func LoadLogProperties() {
 	}
 
 	//
+	// Trace
+	//
+	if props.GetString("log.trace", "false") == "true" {
+		SetTrace(true)
+	}
+
+	//
 	// Levels
 	//
 	logLevels := make(map[string]Level)
