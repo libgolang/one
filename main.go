@@ -52,7 +52,6 @@ func main() {
 	// logging
 	_ = os.Setenv("LOG_CONFIG", "config.properties")
 	log.LoadLogProperties()
-	log.SetTrace(true)
 
 	//
 	if *cfgMasterAddrPtr == "" && *cfgNodeMasterAddrPtr == "" {
