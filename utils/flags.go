@@ -117,6 +117,10 @@ func getConfig() *properties.Properties {
 	fs.SetOutput(&voidWriter{})
 	configFilePtr := fs.String("config", envFileName, "Path to configuration file")
 	_ = fs.Parse(os.Args[1:])
-	loadedProps, _ = properties.LoadFile(*configFilePtr, properties.UTF8)
-	return loadedProps
+	p, err := properties.LoadFile(*configFilePtr, properties.UTF8)
+	if err != nil {
+		p = properties.NewProperties()
+	}
+	loadedProps = p // set global variable
+	return p
 }
