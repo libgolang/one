@@ -116,7 +116,7 @@ func (n *nodeService) preRunHook(cont model.Container) error {
 	}
 	log.Info("Running preRunHook %s", n.preRunHookCfg)
 
-	args := argsFromContainer(n.preRunHookCfg, cont)
+	args := argsFromContainer("pre", n.preRunHookCfg, cont)
 	return utils.ExecSilent(args...)
 }
 
@@ -127,13 +127,13 @@ func (n *nodeService) postRunHook(cont model.Container) error {
 	}
 	log.Info("Running postRunHook %s", n.postRunHookCfg)
 
-	args := argsFromContainer(n.postRunHookCfg, cont)
+	args := argsFromContainer("post", n.postRunHookCfg, cont)
 	return utils.ExecSilent(args...)
 }
 
-func argsFromContainer(hook string, cont model.Container) []string {
+func argsFromContainer(hookType string, hook string, cont model.Container) []string {
 	args := make([]string, 0)
-	args = append(args, hook, "--name", cont.Name)
+	args = append(args, hook, "--hook", hookType, "--name", cont.Name)
 	for volume := range cont.Volumes {
 		args = append(args, "--volume", volume)
 	}
