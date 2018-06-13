@@ -33,16 +33,16 @@ func NewNodeService(masterAddr string, docker Docker, nodeName, nodeAddr, preRun
 	ns.nodeName = nodeName
 	ns.nodeAddr = nodeAddr
 	ns.docker = docker
-	ns.checkNode()
+	ns.checkWithMaster()
 	go func() {
 		for range ns.ticker.C {
-			ns.checkNode()
+			ns.checkWithMaster()
 		}
 	}()
 	return ns
 }
 
-func (n *nodeService) checkNode() {
+func (n *nodeService) checkWithMaster() {
 	log.Info("checkNode()")
 
 	node := model.Node{}
@@ -74,8 +74,6 @@ func (n *nodeService) checkNode() {
 	for _, cont := range infoFromMaster.Containers {
 		serverMap[cont.Name] = cont
 	}
-	//log.Debug("%s", serverMap)
-	//log.Debug("%s", currentMap)
 
 	// stop containers in currentMap that are not in serverMap
 	for name := range currentMap {

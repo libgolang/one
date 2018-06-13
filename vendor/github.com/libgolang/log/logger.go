@@ -19,7 +19,7 @@ var (
 
 // Logger interface exposed to users
 type Logger interface {
-	Error(format string, args ...interface{})
+	Error(format string, args ...interface{}) error
 	Warn(format string, args ...interface{})
 	Info(format string, args ...interface{})
 	Debug(format string, args ...interface{})
@@ -100,8 +100,9 @@ func SetWriters(w []Writer) {
 }
 
 // Error logs at error level
-func (l *logger) Error(format string, a ...interface{}) {
+func (l *logger) Error(format string, a ...interface{}) error {
 	PrintLog(l.name, l.level, ERROR, format, a)
+	return fmt.Errorf(format, a...)
 }
 
 // Info logs at info level
@@ -146,8 +147,8 @@ func PrintLog(name string, loggerLevel, logLevel Level, format string, a []inter
 }
 
 // Error log to root logger
-func Error(format string, a ...interface{}) {
-	globalLogger.Error(format, a...)
+func Error(format string, a ...interface{}) error {
+	return globalLogger.Error(format, a...)
 }
 
 // Info log to root logger

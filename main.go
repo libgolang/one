@@ -5,7 +5,7 @@ import (
 	"math/rand"
 	"os"
 	"os/signal"
-	"text/tabwriter"
+	//"text/tabwriter"
 	"time"
 
 	"github.com/libgolang/one/service"
@@ -15,39 +15,33 @@ import (
 )
 
 var (
-	cfgMasterCertFile    = utils.ConfigString("tls.cert.file", "", "Certificate to use for master REST TLS")
-	cfgMasterKeyFile     = utils.ConfigString("tls.key.file", "", "Key file to use for master REST TLS")
-	nodeName             = utils.ConfigString("node.name", utils.ResolveNodeName(), "Machine Node Name. Defaults to hostname")
-	preRunHookPtr        = utils.ConfigString("hook.run.pre", "", "Pre run hook")
-	postRunHookPtr       = utils.ConfigString("hook.run.post", "", "Post run hook")
-	proxyBaseDomain      = utils.ConfigStringRequired("proxy.domain", "Proxy Domain")
-	proxyPublicIP        = utils.ConfigString("proxy.ip.public", "127.0.0.1", "Public IP address exposed to the internet.")
-	proxyPrivateIP       = utils.ConfigString("proxy.ip.private", "127.0.0.1", "Proxy IP address exposed internally only.")   // "10.10.10.1"
-	dockerHostIP         = utils.ConfigString("docker.host.ip", "127.0.0.1", "IP address to attach docker port mappings to.") //"10.10.10.1"
-	dockerAPIHost        = utils.ConfigString("docker.host", "", "Host or unix that node service uses to connect to docker daemon. E.g.: \"\" = unix socket || \"tcp:/127.0.0.1:2375\"")
-	dockerAPIVersion     = utils.ConfigString("docker.api.version", "1.37", "Docker API Version. defaults to 1.37.")
-	defDir               = utils.ConfigString("var.dir", "./var", "Var directory.")
-	cfgMasterAddrPtr     = utils.ConfigString("master", "", "Starts the master and attaches it to the given address. e.g. --master=127.0.0.1:8080")
-	cfgNodeMasterAddrPtr = utils.ConfigString("node", "", "Starts the node and takes the master address. e.g. --node=127.0.0.1:8080")
-	db                   service.Db
-	dbBack               service.Db
-	proxy                service.Proxy
-	docker               service.Docker
-	cycle                service.Cycle
+	cfgMasterCertFile     = utils.ConfigString("tls.cert.file", "", "Certificate to use for master REST TLS")
+	cfgMasterKeyFile      = utils.ConfigString("tls.key.file", "", "Key file to use for master REST TLS")
+	nodeName              = utils.ConfigString("node.name", utils.ResolveNodeName(), "Machine Node Name. Defaults to hostname")
+	preRunHookPtr         = utils.ConfigString("hook.run.pre", "", "Pre run hook")
+	postRunHookPtr        = utils.ConfigString("hook.run.post", "", "Post run hook")
+	proxyBaseDomain       = utils.ConfigStringRequired("proxy.domain", "Proxy Domain")
+	proxyPublicIP         = utils.ConfigString("proxy.ip.public", "127.0.0.1", "Public IP address exposed to the internet.")
+	proxyPrivateIP        = utils.ConfigString("proxy.ip.private", "127.0.0.1", "Proxy IP address exposed internally only.")   // "10.10.10.1"
+	dockerHostIP          = utils.ConfigString("docker.host.ip", "127.0.0.1", "IP address to attach docker port mappings to.") //"10.10.10.1"
+	dockerAPIHost         = utils.ConfigString("docker.host", "", "Host or unix that node service uses to connect to docker daemon. E.g.: \"\" = unix socket || \"tcp:/127.0.0.1:2375\"")
+	dockerAPIVersion      = utils.ConfigString("docker.api.version", "1.37", "Docker API Version. defaults to 1.37.")
+	defDir                = utils.ConfigString("var.dir", "./var", "Var directory.")
+	cfgMasterAddrPtr      = utils.ConfigString("master", "", "Starts the master and attaches it to the given address. e.g. --master=127.0.0.1:8080")
+	cfgNodeMasterAddrPtr  = utils.ConfigString("node", "", "Starts the node and takes the master address. e.g. --node=127.0.0.1:8080")
+	cfgProxyMasterAddrPtr = utils.ConfigString("proxy", "", "Starts proxy service and takes the master address. e.g. --proxy=127.0.0.1:8080")
+	dbBack                service.Db
+	docker                service.Docker
 )
 
 func main() {
 	utils.ConfigParse()
 
 	dbBack = service.NewDb(*defDir)
-	db = service.NewFrontDb(dbBack)
-	proxy = service.NewProxy(*proxyPublicIP, *proxyPrivateIP, *proxyBaseDomain)
-	docker = service.NewDocker(*dockerHostIP /*, dockerAPIHost, dockerAPIVersion*/, db)
-	cycle = service.NewLifecycle(*dockerHostIP, db, proxy, docker)
+	docker = service.NewDocker(*dockerHostIP)
 
 	// Init
 	rand.Seed(time.Now().Unix())
-	defer db.Close()
 
 	// logging
 	_ = os.Setenv("LOG_CONFIG", "config.properties")
@@ -61,6 +55,8 @@ func main() {
 
 	var rs service.RestServer
 	if *cfgMasterAddrPtr != "" {
+		db := service.NewFrontDb(dbBack)
+		defer db.Close()
 		rs = service.NewRestServer(*cfgMasterAddrPtr, *cfgMasterCertFile, *cfgMasterKeyFile)
 		service.NewMasterService(rs, db)
 		rs.Start()
@@ -68,6 +64,10 @@ func main() {
 
 	if *cfgNodeMasterAddrPtr != "" {
 		service.NewNodeService(*cfgNodeMasterAddrPtr, docker, *nodeName, *dockerHostIP, *preRunHookPtr, *postRunHookPtr)
+	}
+
+	if *cfgProxyMasterAddrPtr != "" {
+		proxy := service.NewProxy(*cfgProxyMasterAddrPtr, *proxyPublicIP, *proxyPrivateIP, *proxyBaseDomain)
 	}
 
 	c := make(chan os.Signal, 1)
@@ -79,25 +79,12 @@ func main() {
 		}
 		os.Exit(1)
 	}
-
-	/*
-		case "service":
-		case "list":
-			listAction(os.Args)
-		case "start":
-			startService(os.Args)
-		case "stop":
-			stopService(os.Args)
-		default:
-			printHelp()
-			os.Exit(1)
-		}
-	*/
 }
 
+/*
 func listAction(args []string) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', 0)
-	fmt.Fprintln(w, fmt.Sprintf("%s\t%s\t", "=Name=", "=State="))
+	_, _ = fmt.Fprintln(w, fmt.Sprintf("%s\t%s\t", "=Name=", "=State="))
 	for _, def := range db.ListDefinitions() {
 		isRunning := docker.IsRunningByDefName(def.Name)
 		var runningStr string
@@ -106,7 +93,7 @@ func listAction(args []string) {
 		} else {
 			runningStr = "stopped"
 		}
-		fmt.Fprintln(w, fmt.Sprintf("%s\t%s\t", def.Name, runningStr))
+		_, _ = fmt.Fprintln(w, fmt.Sprintf("%s\t%s\t", def.Name, runningStr))
 	}
 	_ = w.Flush()
 }
@@ -138,6 +125,7 @@ func stopService(args []string) {
 	}
 	cycle.Stop(def)
 }
+*/
 
 func printHelp() {
 	progName := os.Args[0]

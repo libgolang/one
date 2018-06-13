@@ -26,13 +26,11 @@ const (
 type Docker interface {
 	ContainerList() []model.Container
 	IsRunningByDefName(defName string) bool
-	//IsRunningByName(defName string) bool
 	ContainerExists(defName string) bool
 	ContainerRemove(defName string)
 	ContainerRemoveByName(defName string)
 	ContainerGetByDefName(defName string) *model.Container
 	ContainerGetByName(name string) *model.Container
-	ContainerRunByDefinition(def *model.Definition) *model.Container
 	ContainerRun(def *model.Container)
 	ContainerStopByDefName(defName string)
 	ContainerRemoveByDefName(defName string)
@@ -42,14 +40,13 @@ type docker struct {
 	hostIP string
 	ctx    context.Context
 	cli    *client.Client
-	db     Db
 }
 
 // NewDocker Docker constructor host is the ip or host name
 // used to access the hsot. apiHost is the ip or host name of
 // the docker api (empty string to use unix socket).  apiVersion
 // used to match the api version on the docker server.
-func NewDocker(host /*, apiHost, apiVersion*/ string, db Db) Docker {
+func NewDocker(host string) Docker {
 	//_ = os.Setenv("DOCKER_HOST", apiHost)
 	//_ = os.Setenv("DOCKER_API_VERSION", apiVersion)
 	ctx := context.Background()
@@ -58,7 +55,7 @@ func NewDocker(host /*, apiHost, apiVersion*/ string, db Db) Docker {
 		panic(err)
 	}
 
-	return &docker{host, ctx, cli, db}
+	return &docker{host, ctx, cli}
 }
 
 func (d *docker) ContainerRemove(name string) {
@@ -167,20 +164,6 @@ func (d *docker) ContainerExists(defName string) bool {
 	return false
 }
 
-func (d *docker) ContainerRunByDefinition(def *model.Definition) *model.Container {
-	log.Info("ContainerRunByDefinition(%s)", def)
-
-	cont := &model.Container{}
-	cont.Image = def.Image
-	cont.DefinitionName = def.Name
-	cont.HTTPPort = d.db.NextAutoIncrement("http.port", "http.port")
-	cont.Name = fmt.Sprintf("%s-%d", def.Name, d.db.NextAutoIncrement("inc.container", def.Name))
-	cont.Running = false
-
-	d.ContainerRun(cont)
-	return cont
-}
-
 func (d *docker) ContainerStopByDefName(defName string) {
 	log.Info("CotainerStopByDefName(%s)", defName)
 	if cont := d.ContainerGetByDefName(defName); cont != nil {
@@ -200,60 +183,6 @@ func (d *docker) ContainerRemoveByDefName(defName string) {
 			panic(err)
 		}
 	}
-}
-
-/*
-func (d *docker) getNextRandPort() int {
-	m := d.db.GetVars(func(m map[string]string) {
-		portStr, ok := m["lastHttpPort"]
-		if !ok {
-			portStr = strconv.Itoa(initPort - 1)
-		}
-		port, err := strconv.Atoi(portStr)
-		if err != nil {
-			panic(err)
-		}
-
-		port++
-
-		m["lastHttpPort"] = strconv.Itoa(port)
-	})
-
-	portStr := m["lastHttpPort"]
-
-	port, err := strconv.Atoi(portStr)
-	if err != nil {
-		panic(err)
-	}
-	log.Debug("getNextRandPort():%d", port)
-	return port
-}
-*/
-
-func (d *docker) getNextID() int {
-	m := d.db.GetVars(func(m map[string]string) {
-		str, ok := m["lastId"]
-		if !ok {
-			str = strconv.Itoa(initID - 1)
-		}
-
-		id, err := strconv.Atoi(str)
-		if err != nil {
-			panic(err)
-		}
-
-		id++
-		m["lastId"] = strconv.Itoa(id)
-	})
-
-	str := m["lastId"]
-
-	id, err := strconv.Atoi(str)
-	if err != nil {
-		panic(err)
-	}
-	log.Debug("getNextID():%d", id)
-	return id
 }
 
 func (d *docker) ContainerRun(cont *model.Container) {

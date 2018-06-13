@@ -15,6 +15,7 @@ type MasterClient interface {
 	//ListContainersByNode(nodeName string) []model.Container
 	PingNodeInfo(nfo model.NodeInfo) (*model.NodeInfoResponse, error)
 	GetDefinition(name string) (*model.Definition, error)
+	GetProxyData() (*model.ProxyDataResponse, error)
 }
 
 type masterClient struct {
@@ -68,4 +69,18 @@ func (m *masterClient) GetDefinition(name string) (*model.Definition, error) {
 	def := &model.Definition{}
 	err = json.Unmarshal(resp.Body(), def)
 	return def, err
+}
+
+func (m *masterClient) GetProxyData() (*model.ProxyDataResponse, error) {
+	resp, err := resty.R().Get(fmt.Sprintf("%s/master/proxynfo", m.endPoint))
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode() != 200 {
+		return nil, fmt.Errorf("Returned %d status code", resp.StatusCode())
+	}
+
+	res := &model.ProxyDataResponse{}
+	err = json.Unmarshal(resp.Body(), res)
+	return res, err
 }

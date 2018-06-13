@@ -1,14 +1,22 @@
 package service
 
 import (
+	"crypto/tls"
 	"fmt"
 	"io/ioutil"
+	"net/url"
 	"os"
 	"path"
+	"time"
 
+	"github.com/libgolang/one/clients"
 	"github.com/libgolang/one/utils"
 
+	"net/http"
+
 	"github.com/libgolang/log"
+	"github.com/vulcand/oxy/forward"
+	"github.com/vulcand/oxy/roundrobin"
 )
 
 var (
@@ -24,14 +32,92 @@ type Proxy interface {
 }
 
 type proxy struct {
-	publicIP   string
-	privateIP  string
-	baseDomain string
+	publicIP     string
+	privateIP    string
+	baseDomain   string
+	masterClient clients.MasterClient
+	ticker       *time.Ticker
+	proxyMap     map[string]*url.URL
 }
 
 // NewProxy constructor
-func NewProxy(publicIP, privateIP, baseDomain string) Proxy {
-	return &proxy{publicIP, privateIP, baseDomain}
+func NewProxy(masterAddr, publicIP, privateIP, baseDomain string) Proxy {
+	p := &proxy{}
+	p.publicIP = publicIP
+	p.privateIP = privateIP
+	p.baseDomain = baseDomain
+	p.masterClient = clients.NewMasterClient(masterAddr)
+	p.ticker = time.NewTicker(time.Second * 30)
+	p.proxyMap = make(map[string]*url.URL)
+	go func() {
+		for range p.ticker.C {
+			p.checkWithMaster()
+		}
+	}()
+
+	return p
+}
+
+// Start starts the ssl proxy and the http to https redirector
+func (p *proxy) Start() {
+	//
+	//
+	go func() {
+		p.startHttpsRedirector()
+	}()
+
+	p.startSslProxy()
+}
+
+func (p *proxy) startSslProxy() {
+	fwd, _ := forward.New()
+	lb, _ := roundrobin.New(fwd)
+	url1 = testutils.ParseURI("http://localhost:63450")
+	lb.UpsertServer(url1)
+	lb.UpsertServer(url2)
+	buffer, _ := buffer.New(lb, buffer.Retry(`IsNetworkError() && Attempts() < 2`))
+
+	proxyHandler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		hostname := req.URL.Hostname()
+		bufferProxy := p.proxyMap[hostname]
+		bufferProxy.ServeHTTP(w, req)
+	})
+
+	//
+	//
+	cfg := &tls.Config{}
+	cert, err := tls.LoadX509KeyPair("cert.pem", "key.pem")
+	if err != nil {
+		log.Panic("%s", err)
+	}
+	cfg.Certificates = append(cfg.Certificates, cert)
+	cfg.BuildNameToCertificate()
+
+	//
+	//
+	server := &http.Server{Addr: ":443", Handler: proxyHandler}
+	server.TLSConfig = cfg
+	server.ListenAndServeTLS("", "")
+}
+
+func (p *proxy) startHttpsRedirector() {
+	//
+	// Forwards incoming requests to whatever location URL points to, adds proper forwarding headers
+	//
+	redirect := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		req.URL.Scheme = "https"
+		w.Header().Set("Location", req.URL.String())
+		w.WriteHeader(301)
+	})
+	unsecureServer := &http.Server{Addr: ":80", Handler: redirect}
+	unsecureServer.ListenAndServe()
+}
+
+func (p *proxy) checkWithMaster() {
+	proxyDefMap := p.masterClient.GetProxyData()
+	for name, proxyDef := range proxyDefMap {
+		p.AddDockerProxySsl(name)
+	}
 }
 
 func (p *proxy) RemoveDockerProxy(name string) {
